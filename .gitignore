@@ -1,0 +1,107 @@
+# =============================================================================
+# 1. Secrets and Local Environment Files (NEVER COMMIT REAL SECRETS)
+# =============================================================================
+.env
+.env.*
+!.env.example
+!.env.*.example
+secrets/
+private/
+*.pem
+*.key
+*.p12
+*.pfx
+.pfx
+credentials.json
+service-account.json
+*.secret
+*.credentials
+
+# =============================================================================
+# 2. Python & Backend
+# =============================================================================
+__pycache__/
+pycache/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# =============================================================================
+# 3. Frontend (React / TypeScript / Vite)
+# =============================================================================
+node_modules/
+frontend/dist/
+frontend/build/
+frontend/coverage/
+frontend/.vite/
+.vite/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+
+# =============================================================================
+# 4. IDE and OS Local Settings
+# =============================================================================
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+*~
+*.swp
+*.swo
+
+# =============================================================================
+# 5. Local Databases, Logs, and Temporary Files
+# =============================================================================
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.log
+logs/
+tmp/
+temp/
+
+# =============================================================================
+# 6. Generated Uploads and Private Local Storage
+# =============================================================================
+/uploads/
+/storage/
+private_uploads/
+backend/private_uploads/
+backend/storage/
+
+# =============================================================================
+# 7. Local Docker & Sandbox Artifacts
+# =============================================================================
+docker-compose.override.yml
+artifacts/
+user_uploaded_files/
+skills/
+
+# =============================================================================
+# Kept on this computer only (not part of the published project)
+# =============================================================================
+# Old Docker/PostgreSQL setup and the original UI prototype; the app uses neither.
+docker-compose.yml
+backend/Dockerfile
+frontend/Dockerfile
+frontend/legacy/

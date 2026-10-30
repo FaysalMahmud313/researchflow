@@ -1,0 +1,67 @@
+name: Deploy
+
+# Runs after CI passes on main (or by hand from the Actions tab), builds the web app
+# and ships it to the server prepared with deploy/server_setup.sh.
+# Needs repository variable DEPLOY_HOST and secrets DEPLOY_SSH_KEY + DEPLOY_KNOWN_HOSTS;
+# until DEPLOY_HOST is set, this workflow is skipped.
+on:
+  workflow_run:
+    workflows: ["ResearchFlow CI & Security Pipeline"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and deploy
+    if: >-
+      vars.DEPLOY_HOST != '' &&
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    env:
+      TARGET: deploy@${{ vars.DEPLOY_HOST }}
+    steps:
+      - name: Checkout the tested commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci --no-fund --no-audit
+          npm run build
+
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf 'Host *\n  IdentityFile ~/.ssh/id_deploy\n  IdentitiesOnly yes\n  StrictHostKeyChecking yes\n' > ~/.ssh/config
+
+      - name: Upload release
+        run: |
+          rsync -az --delete --exclude '__pycache__/' backend/ "$TARGET:/opt/researchflow/backend/"
+          rsync -az --delete frontend/dist/ "$TARGET:/opt/researchflow/web.new/"
+          rsync -az deploy/release.sh "$TARGET:/opt/researchflow/release.sh"
+
+      - name: Activate release
+        run: ssh "$TARGET" 'bash /opt/researchflow/release.sh'

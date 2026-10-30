@@ -1,0 +1,16 @@
+# Gitleaks configuration: the default rules, minus files that only hold fake values.
+title = "ResearchFlow"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures, local demo data and configuration templates (no real secrets)"
+paths = [
+  '''^backend/tests/''',
+  '''^frontend/tests/''',
+  '''^backend/scripts/seed_dev\.py$''',
+  '''^backend/app/core/demo\.py$''',
+  '''^README\.md$''',
+  '''^\.env\.example$''',
+]

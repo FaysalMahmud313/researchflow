@@ -1,0 +1,107 @@
+name: ResearchFlow CI & Security Pipeline
+
+on:
+  push:
+    branches: ["main", "develop"]
+  pull_request:
+    branches: ["main", "develop"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  secret-scan:
+    name: Secret Scanning (Gitleaks & Local Audit)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks Secret Scanner
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run repository secret & config policy audit
+        run: python3 scripts/security_audit.py
+
+  backend-quality-and-tests:
+    name: Backend Lint, Typecheck, Audit & Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: SQL injection & command injection guard (must pass)
+        run: ruff check app scripts tests --select S608,S102,S307,S602,S603,S604,S605,S606,S607
+
+      - name: Ruff static analysis & security rules
+        run: ruff check app scripts tests
+
+      - name: mypy strict type checking
+        run: mypy app
+
+      - name: Dependency vulnerability scan
+        run: pip-audit -r requirements.txt
+
+      - name: Test suite (security, SQL injection, workflows)
+        env:
+          APP_ENV: testing
+        run: python -m pytest -q tests
+
+  frontend-quality-and-build:
+    name: Frontend Typecheck, Lint, Tests & Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-fund --no-audit
+
+      - name: Verify no server secrets leaked into VITE_ env vars
+        run: |
+          if grep -rn "VITE_.*SECRET\|VITE_.*PASSWORD\|VITE_.*PRIVATE" src/ ../.env.example; then
+            echo "Forbidden secret variable with VITE_ prefix detected!"
+            exit 1
+          fi
+
+      - name: TypeScript strict check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Production build
+        run: npm run build

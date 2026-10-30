@@ -1,0 +1,6 @@
+# Shell scripts run on Linux servers and must keep LF line endings even when
+# committed from Windows; Windows launchers keep CRLF.
+* text=auto
+*.sh text eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
