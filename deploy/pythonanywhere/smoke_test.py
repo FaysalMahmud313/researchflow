@@ -36,7 +36,7 @@ def main() -> int:
     check("API docs are hidden", http.get("/docs").status_code in (200, 404) and "swagger" not in http.get("/docs").text.lower())
     check("demo account hint does not exist", http.get("/api/v1/auth/dev-demo").status_code == 404)
 
-    password = "Smoke-Test-2026-pw"
+    password = "Smoke-Test-2026-pw"  # gitleaks:allow
     reg = http.post("/api/v1/auth/register", json={
         "full_name": "Smoke Test", "username": "smoke.test", "email": "smoke@example.org", "password": password})
     check("registration works", reg.status_code == 201, reg.text)
