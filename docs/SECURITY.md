@@ -73,5 +73,7 @@ If a credential or signing key is ever suspected of exposure:
 
 ## 3. Residual Risks & Production Deployment Responsibilities
 
+- **Proxy headers**: `TRUST_PROXY_HEADERS` (used only by `backend/wsgi.py`) takes the visitor's address from `X-Real-IP`, or the last entry of `X-Forwarded-For`. Turn it on only where every request passes through the host's own proxy, as on PythonAnywhere; otherwise visitors could forge their address and dodge the login rate limit.
+- **Single-service hosting**: with `FRONTEND_DIST_DIR` the API also serves the built web app. Requested paths are resolved and must stay inside that folder, and those pages carry the same strict Content Security Policy the Caddy setup uses.
 - **Rate Limiting in Multi-Worker Deployments**: The default sliding-window rate limiter stores buckets in process memory; run the API with a single worker (as the service created by `deploy/server_setup.sh` does) or enforce rate limits at the reverse proxy.
 - **Antivirus / Malware Scanning**: While magic-byte and extension checks block executables and active HTML/SVG uploads, high-assurance deployments should integrate ClamAV or object-storage malware scanning on uploaded archives.

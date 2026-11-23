@@ -1,0 +1,91 @@
+name: Publish
+
+# Builds the web app and writes a ready-to-run copy of ResearchFlow (backend + built web
+# app + host scripts) to the "deploy" branch. Free hosts that cannot run Node, such as
+# PythonAnywhere, install from that branch. Runs after CI passes on main, or by hand
+# from the Actions tab. Nothing is published unless the bundle installs and works.
+on:
+  workflow_run:
+    workflows: ["ResearchFlow CI & Security Pipeline"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-deploy-branch
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build, test and publish to the deploy branch
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    env:
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - name: Checkout the tested commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build the web app
+        working-directory: frontend
+        run: |
+          npm ci --no-fund --no-audit
+          npm run build
+
+      - name: Assemble the bundle
+        run: bash deploy/build_bundle.sh "$RUNNER_TEMP/bundle"
+
+      - name: Install and test the bundle the way PythonAnywhere runs it
+        run: |
+          export HOME="$RUNNER_TEMP/home" USER=smoketest RF_WWW_DIR="$RUNNER_TEMP/www"
+          mkdir -p "$HOME" "$RF_WWW_DIR"
+          cp -r "$RUNNER_TEMP/bundle" "$HOME/researchflow"
+          start_file="$RF_WWW_DIR/smoketest_pythonanywhere_com_wsgi.py"
+          echo "# placeholder, as created by the host" > "$start_file"
+          bash "$HOME/researchflow/setup.sh" 3.12
+          bash "$HOME/researchflow/setup.sh" 3.12   # running it again must be safe
+          "$HOME/.virtualenvs/researchflow/bin/python" deploy/pythonanywhere/smoke_test.py "$start_file" smoketest.pythonanywhere.com
+          bash "$HOME/researchflow/backup.sh"
+
+      - name: Publish to the deploy branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --exit-code --heads "$remote" deploy >/dev/null 2>&1; then
+            git clone --quiet --depth 1 --branch deploy "$remote" out
+          else
+            git init --quiet --initial-branch deploy out
+            git -C out remote add origin "$remote"
+          fi
+          find out -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -r "$RUNNER_TEMP/bundle/." out/
+          cd out
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "The deploy branch is already up to date."
+          else
+            git commit --quiet -m "Build from ${SOURCE_SHA}"
+            git push --quiet origin deploy
+            echo "Published build from ${SOURCE_SHA}."
+          fi

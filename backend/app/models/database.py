@@ -371,11 +371,11 @@ CREATE TABLE IF NOT EXISTS audit_events (
 class RelationalDatabase:
     """Parameterized SQLite connection manager with versioned migrations.
 
-    File databases use WAL so concurrent API requests do not block each other's reads. The shared in-memory connection used by
-    tests is serialized with a lock.
+    File databases use WAL by default so concurrent API requests do not block each other's reads (hosts on network file
+    systems pass journal_mode="DELETE"). The shared in-memory connection used by tests is serialized with a lock.
     """
 
-    def __init__(self, db_path: str | Path) -> None:
+    def __init__(self, db_path: str | Path, journal_mode: str = "WAL") -> None:
         self.db_path = str(db_path)
         if self.db_path != ":memory:":
             Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -387,7 +387,9 @@ class RelationalDatabase:
             self._persistent_conn.execute("PRAGMA foreign_keys = ON;")
         else:
             conn = sqlite3.connect(self.db_path)
-            conn.execute("PRAGMA journal_mode = WAL;")
+            if journal_mode not in ("WAL", "DELETE", "TRUNCATE"):
+                raise ValueError("Unsupported SQLite journal mode.")
+            conn.execute(f"PRAGMA journal_mode = {journal_mode};")
             conn.close()
         self.run_migrations()
 

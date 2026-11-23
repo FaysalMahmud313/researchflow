@@ -68,6 +68,9 @@ npm run dev
 | `SESSION_REMEMBER_DAYS` | How long "Keep me signed in" lasts (default 30). Other sign-ins end when the browser closes |
 | `AVATAR_MAX_UPLOAD_BYTES` | Largest profile picture accepted before resizing (default 5 MB) |
 | `DOI_LOOKUP_ENABLED` | Optional Crossref metadata lookup |
+| `FRONTEND_DIST_DIR` | Folder with the built web app (`frontend/dist`). When set, the API serves it too, so one process is the whole site |
+| `SQLITE_JOURNAL_MODE` | `WAL` (default) or `DELETE` for hosts whose disks are network file systems |
+| `TRUST_PROXY_HEADERS` | Only with `backend/wsgi.py`: take the visitor's address from the host's proxy headers |
 
 Administration without email (list users, reset a password, mark an email verified):
 
@@ -80,7 +83,14 @@ python scripts/admin.py verify-email someone@university.edu
 
 ## 4. Deploy
 
-[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) puts ResearchFlow online for free and always on: the code lives on GitHub, and every push to `main` that passes CI is deployed automatically to an Oracle Cloud Always Free server with HTTPS and nightly backups. The server is prepared with one command, [`deploy/server_setup.sh`](deploy/server_setup.sh).
+Two free ways to put ResearchFlow online:
+
+| | Guide | Needs a card | Good for |
+| --- | --- | --- | --- |
+| **PythonAnywhere** | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | No | Small teams; 512 MB of disk; one command to update |
+| **Your own server** (Oracle Cloud Always Free or any Ubuntu VPS) | [docs/DEPLOYMENT_SERVER.md](docs/DEPLOYMENT_SERVER.md) | Yes, to verify the account | More space, automatic deploys, nightly backups |
+
+In both, GitHub runs the tests first. For PythonAnywhere the **Publish** workflow builds a ready-to-run copy on the `deploy` branch, where one process serves the web app and the API together (`FRONTEND_DIST_DIR`).
 
 ## 5. Test
 

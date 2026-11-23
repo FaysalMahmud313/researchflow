@@ -55,6 +55,11 @@ class AppSettings:
     max_archive_entries: int = 2000
     max_archive_uncompressed_bytes: int = 512 * 1024 * 1024
     doi_lookup_enabled: bool = False
+    # Folder with the built web app (frontend/dist). When set, the API serves it too, so one
+    # process is the whole site. Leave empty when a web server such as Caddy serves the files.
+    frontend_dist_dir: str = ""
+    # SQLite journal mode. WAL is fastest; hosts whose disks are network file systems need DELETE.
+    sqlite_journal_mode: str = "WAL"
     # Outgoing email (verification and password-reset codes). "console" sends nothing.
     email_backend: str = "console"
     smtp_host: str = ""
@@ -75,6 +80,8 @@ class AppSettings:
         if self.frontend_origin == "*":
             raise ConfigurationError("FRONTEND_ORIGIN cannot be wildcard '*' when credentials are used.")
 
+        if self.sqlite_journal_mode not in ("WAL", "DELETE", "TRUNCATE"):
+            raise ConfigurationError("SQLITE_JOURNAL_MODE must be WAL, DELETE or TRUNCATE.")
         if self.email_backend not in ("console", "smtp"):
             raise ConfigurationError("EMAIL_BACKEND must be 'console' or 'smtp'.")
         if self.email_backend == "smtp" and not self.smtp_host:
@@ -109,6 +116,17 @@ class AppSettings:
                     raise ConfigurationError(
                         f"{name} uses a placeholder or development default in {self.app_env} environment."
                     )
+
+
+def load_env_file(path: Path) -> None:
+    """Read KEY=VALUE lines into the environment. Variables that are already set win."""
+    if not path.is_file():
+        return
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key.strip(), value.strip())
 
 
 def load_settings_from_env(env: dict[str, str] | None = None) -> AppSettings:
@@ -162,6 +180,8 @@ def load_settings_from_env(env: dict[str, str] | None = None) -> AppSettings:
             d.strip().lower().lstrip("@") for d in src.get("ALLOWED_EMAIL_DOMAINS", "").split(",") if d.strip()
         ],
         doi_lookup_enabled=parse_bool("DOI_LOOKUP_ENABLED", False),
+        frontend_dist_dir=src.get("FRONTEND_DIST_DIR", "").strip(),
+        sqlite_journal_mode=src.get("SQLITE_JOURNAL_MODE", "WAL").strip().upper(),
         email_backend=src.get("EMAIL_BACKEND", "console").strip().lower(),
         smtp_host=src.get("SMTP_HOST", "").strip(),
         smtp_port=int(src.get("SMTP_PORT", "587")),

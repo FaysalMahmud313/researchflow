@@ -3,9 +3,9 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator, Awaitable, Callable
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 
 from app.api.v1.bibliography import build_bibliography_router
 from app.api.v1.context import ApiContext
@@ -18,6 +18,19 @@ from app.security.rate_limit import SlidingWindowRateLimiter
 from app.storage.private_storage import PrivateStorageEngine
 
 logger = logging.getLogger("researchflow")
+
+# Policy for the web app's own pages (the same one deploy/server_setup.sh gives Caddy).
+WEB_APP_CSP = (
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+    "font-src 'self' data:; frame-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; "
+    "form-action 'self'; frame-ancestors 'none'"
+)
+# Explicit types: the system's own table can be wrong (Windows often maps .js to text/plain).
+WEB_MEDIA_TYPES = {
+    ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
+    ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon",
+    ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf", ".map": "application/json",
+}
 
 
 def resolve_db_path(cfg: AppSettings) -> str:
@@ -37,7 +50,7 @@ def create_app(
     cfg = settings if settings is not None else load_settings_from_env()
     cfg.validate()
 
-    db = RelationalDatabase(db_path if db_path is not None else resolve_db_path(cfg))
+    db = RelationalDatabase(db_path if db_path is not None else resolve_db_path(cfg), cfg.sqlite_journal_mode)
     storage = PrivateStorageEngine(cfg.private_storage_dir, cfg.max_upload_size_bytes)
     rate_limiter = SlidingWindowRateLimiter()
     ctx = ApiContext(cfg, db, storage, rate_limiter)
@@ -103,10 +116,40 @@ def create_app(
     app.include_router(build_bibliography_router(ctx))
     app.include_router(build_workspace_router(ctx))
 
-    @app.get("/", include_in_schema=False)
-    def root() -> RedirectResponse:
-        # The API has no page of its own; send anyone who opens it to the web app.
-        return RedirectResponse(cfg.frontend_origin)
+    web_dir = Path(cfg.frontend_dist_dir).resolve() if cfg.frontend_dist_dir else None
+    if web_dir is not None and not (web_dir / "index.html").is_file():
+        logger.warning("FRONTEND_DIST_DIR=%s has no index.html; the web app is not served from here.", web_dir)
+        web_dir = None
+
+    if web_dir is None:
+        @app.get("/", include_in_schema=False)
+        def root() -> RedirectResponse:
+            # The API has no page of its own; send anyone who opens it to the web app.
+            return RedirectResponse(cfg.frontend_origin)
+        return app
+
+    index = web_dir / "index.html"
+
+    # Registered last, so every API route above wins.
+    @app.get("/{path:path}", include_in_schema=False)
+    def web_app(path: str) -> FileResponse:
+        if path == "api" or path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not Found")
+        target = (web_dir / path).resolve() if path else index
+        if not (target.is_relative_to(web_dir) and target.is_file()):
+            if "." in path.rsplit("/", 1)[-1]:
+                raise HTTPException(status_code=404, detail="Not Found")  # a missing file, not a page
+            target = index
+        # Vite puts a content hash in every name under assets/, so those can be cached for good.
+        cacheable = target.parent.name == "assets" and target.parent.parent == web_dir
+        return FileResponse(
+            target,
+            media_type=WEB_MEDIA_TYPES.get(target.suffix.lower()),
+            headers={
+                "Cache-Control": "public, max-age=31536000, immutable" if cacheable else "no-cache",
+                "Content-Security-Policy": WEB_APP_CSP,
+            },
+        )
     return app
 
 

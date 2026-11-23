@@ -51,13 +51,13 @@ jobs:
           pip install -e ".[dev]"
 
       - name: SQL injection & command injection guard (must pass)
-        run: ruff check app scripts tests --select S608,S102,S307,S602,S603,S604,S605,S606,S607
+        run: ruff check app scripts tests wsgi.py --select S608,S102,S307,S602,S603,S604,S605,S606,S607
 
       - name: Ruff static analysis & security rules
-        run: ruff check app scripts tests
+        run: ruff check app scripts tests wsgi.py
 
       - name: mypy strict type checking
-        run: mypy app
+        run: mypy app wsgi.py
 
       - name: Dependency vulnerability scan
         run: pip-audit -r requirements.txt
